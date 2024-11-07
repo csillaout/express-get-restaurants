@@ -1,10 +1,23 @@
 //routes
 const express = require("express");
-const router = express.Router();
+const restaurantRoute = express.Router();
 const Restaurant = require("../models/index");
+const bodyParser = require("body-parser");
+const { check, validationResult } = require("express-validator");
 
-//get all restaurants
-router.get("/", async (req, res) => {
+/** All of these chains perform the exact same operation on seperate variables
+ *  check it's not empty -> trim it down
+ *  They're seperated for readability
+ */
+const checkName = () => check("name").not().isEmpty().trim();
+const checkLocation = () => check("location").not().isEmpty().trim();
+const checkCuisine = () => check("cuisine").not().isEmpty().trim();
+
+// This chain checks the length is more than 10 and less than 30
+const checkNameLength = () => check("name").isByteLength({ min: 10, max: 30 });
+
+//Get all restaurants
+restaurantRoute.get("/restaurants", async (req, res) => {
   try {
     const restaurants = await Restaurant.findAll({});
     res.json(restaurants);
@@ -15,8 +28,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-//get a restaurant by ID
-router.get("/:id", async (req, res) => {
+//Get a restaurant by ID
+restaurantRoute.get("/restaurants/:id", async (req, res) => {
   try {
     const restaurant = await Restaurant.findByPk(req.params.id);
     if (restaurant) {
@@ -32,50 +45,59 @@ router.get("/:id", async (req, res) => {
 });
 
 //Create a new restaurant
-router.post("/", async (req, res) => {
-  try {
-    const newRestaurant = await Restaurant.create(req.body);
-    res.status(201).json(newRestaurant);
-  } catch (error) {
-    res
-      .status(400)
-      .json({ error: "An error occurred while creating the restaurant." });
-  }
-});
-
-//update a restaurant by ID
-router.put("/:id", async (req, res) => {
-  try {
-    const [updated] = await Restaurant.update(req.body, {
-      where: { id: req.params.id },
-    });
-    if (updated) {
-      const updatedRestaurant = await Restaurant.findByPk(req.params.id);
-      res.json(updatedRestaurant);
-    } else {
-      res.status(404).json({ error: "Restaurant not found." });
+restaurantRoute.post(
+  "/restaurants",
+  [checkName(), checkNameLength(), checkLocation(), checkCuisine()], // Validators
+  async (req, res) => {
+    // Validate the request body
+    const error = validationResult(req);
+    // If there are validation errors, return them
+    if (!error.isEmpty()) {
+      return res.status(400).json({ error: error.array() });
     }
-  } catch (error) {
-    res
-      .status(400)
-      .json({ error: "An error occurred while updating the restaurant." });
+    // Create a new restaurant if no errors are found
+    const name = req.body.name;
+    const location = req.body.location;
+    const cuisine = req.body.cuisine;
+    await Restaurant.create({ name, location, cuisine });
+    const allRestaurants = await Restaurant.findAll();
+    res.json(allRestaurants);
   }
-});
+);
 
+// Update a restaurant by ID
+restaurantRoute.put(
+  "//restaurants/:id",
+  [checkName(), checkNameLength(), checkLocation(), checkCuisine()], // Validators
+  async (req, res) => {
+    const errors = validationResult(req);
+
+    // If there are validation errors, return them
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array() });
+    }
+
+    const name = req.body.name;
+    const location = req.body.location;
+    const cuisine = req.body.cuisine;
+    const restaurant = await Restaurant.findByPk(req.params.id);
+    if (restaurant == null) {
+      res.status(404).send({ error: "Restaurant not found" });
+      return;
+    }
+    await restaurant.update({ name, location, cuisine });
+    res.json(restaurant);
+  }
+);
 // Delete a restaurant by ID
-router.delete("/:id", async (req, res) => {
-  try {
-    const deleted = await Restaurant.destroy({
-      where: { id: req.params.id },
-    });
-    if (deleted) {
-      res.json({ message: "Restaurant deleted successfully." });
-    } else {
-      res.status(404).json({ error: "Restaurant not found." });
-    }
-  } catch (error) {
-    res.status(500).json({ error: "An error occurred while deleting the restaurant." });
+restaurantRoute.delete("/restaurants/:id", async (req, res) => {
+  let restaurant = await Restaurant.findByPk(req.params.id);
+  if (restaurant == null) {
+    res.status(404).send({ error: "Restaurant not found" });
+    return;
   }
+  await restaurant.destroy();
+  res.json({ message: "Deleted" });
 });
 
-module.exports = router
+module.exports = router;
